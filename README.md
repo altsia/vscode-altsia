@@ -1,11 +1,11 @@
 
-# <img src="https://altsia.github.io/altsia/altsia.svg" title="altsia" width=100 /> VS Code Extension
+# <img src="https://altsia.github.io/altsia//images/altsia.png" title="altsia" width=100 /> VS Code Extension
 
 Visual Studio Code extension for the Altsia
 
 ## Development install
 
-This extension depends on a locally linked `altsia` package in development mode.
+This extension depends on a local `altsia` package via `file:` dependency in development mode.
 
 ### 1. Build `altsia` from source
 
@@ -17,30 +17,35 @@ moon build --release
 
 ### 2. Create `package.json`
 
-Create `target/js/release/build/package.json` with:
+Create `_build/js/release/build/package.json` with:
 
 ```json
 {
   "name": "altsia",
-  "version": "0.1",
+  "version": "0.1.0",
+  "description": "An experimental markup language that respects document calculus. ",
   "main": "altsia.js",
-  "types": "altsia.d.ts"
+  "types": "altsia.d.ts",
+  "keywords": [
+    "altsia"
+  ],
+  "homepage": "https://altsia.github.io/altsia/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/altsia/altsia.git"
+  },
+  "author": "altsia",
+  "license": "GPL-3.0",
+  "dependencies": {}
 }
 ```
 
-Then register it as a global link:
-
-```bash
-cd target/js/release/build
-npm link
-```
-
-### 3. Link `altsia` into this extension
+### 3. Configure `file:` dependency in this extension
 
 ```bash
 cd /path/to/vscode-altsia
+npm pkg set dependencies.altsia="file:../altsia/_build/js/release/build"
 npm install
-npm link altsia
 npm run copy:katex
 ```
 
