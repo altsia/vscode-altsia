@@ -1,11 +1,11 @@
 
-# <img src="https://altsia.github.io/altsia//images/altsia.png" title="altsia" width=100 /> VS Code Extension
+# <img src="./images/altsia.png" title="altsia" width=100 /> VS Code Extension
 
 Visual Studio Code extension for the Altsia
 
 ## Development install
 
-This extension depends on a local `altsia` package via `file:` dependency in development mode.
+This extension depends on the `altsia` package via `file:` dependency in development mode.
 
 ### 1. Build `altsia` from source
 
@@ -22,7 +22,7 @@ Create `_build/js/release/build/package.json` with:
 ```json
 {
   "name": "altsia",
-  "version": "0.1.0",
+  "version": "0.1.0", // edit it
   "description": "An experimental markup language that respects document calculus. ",
   "main": "altsia.js",
   "types": "altsia.d.ts",
