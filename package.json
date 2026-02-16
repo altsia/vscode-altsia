@@ -92,7 +92,8 @@
     "copy:katex": "node scripts/copy-katex-assets.mjs",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "vscode:prepublish": "npm run compile"
+    "vscode:prepublish": "npm run compile", 
+    "pkg": "npx @vscode/vsce package"
   },
   "devDependencies": {
     "@types/node": "20.x",
