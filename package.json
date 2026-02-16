@@ -100,7 +100,7 @@
     "typescript": "^5.6.3"
   },
   "dependencies": {
-    "altsia": "^0.1.0",
+    "altsia": "^0.1.2",
     "katex": "^0.16.28"
   }
 }
