@@ -2,7 +2,7 @@
   "name": "altsia-vscode",
   "displayName": "Altsia",
   "description": "Altsia language support & preview for VS Code",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "publisher": "altsia",
   "engines": {
     "vscode": "^1.90.0"
@@ -68,8 +68,23 @@
       {
         "command": "altsia.normalize",
         "title": "Altsia: Normalize Document"
+      },
+      {
+        "command": "altsia.normalize.maxWidth.set",
+        "title": "Altsia: Set Normalize Max Width"
       }
     ],
+    "configuration": {
+      "title": "Altsia",
+      "properties": {
+        "altsia.normalize.maxWidth": {
+          "type": "integer",
+          "default": 80,
+          "minimum": 20,
+          "markdownDescription": "Maximum line width used by `Altsia: Normalize Document` (maps to `altsia_normalize` `max_width`)."
+        }
+      }
+    },
     "keybindings": [
       {
         "command": "altsia.commentLine",

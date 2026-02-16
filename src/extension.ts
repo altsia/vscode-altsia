@@ -5,7 +5,14 @@ import {
   registerSetDisplayLanguageCommand,
 } from './display-language-command';
 import { registerCommentLineCommand } from './comment-line-command';
-import { registerNormalizeCommand } from './normalize-provider';
+import {
+  registerNormalizeCommand,
+  registerNormalizeRangeFormattingProvider,
+} from './normalize-provider';
+import {
+  getNormalizeMaxWidth,
+  registerSetNormalizeMaxWidthCommand,
+} from './normalize-max-width-command';
 import { PreviewController } from './preview-controller';
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -30,7 +37,12 @@ export function activate(context: vscode.ExtensionContext): void {
       await previewController.refreshPreview();
     },
   });
-  const normalizeCommand = registerNormalizeCommand(getDisplayLanguage);
+  const setNormalizeMaxWidthCommand = registerSetNormalizeMaxWidthCommand();
+  const normalizeCommand = registerNormalizeCommand(getDisplayLanguage, getNormalizeMaxWidth);
+  const normalizeRangeFormattingProvider = registerNormalizeRangeFormattingProvider(
+    getDisplayLanguage,
+    getNormalizeMaxWidth
+  );
   const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument((event) => {
     previewController.handleDocumentChange(event);
   });
@@ -43,7 +55,9 @@ export function activate(context: vscode.ExtensionContext): void {
     openPreviewCommand,
     commentLineCommand,
     setDisplayLanguageCommand,
+    setNormalizeMaxWidthCommand,
     normalizeCommand,
+    normalizeRangeFormattingProvider,
     changeDocumentSubscription,
     changeActiveEditorSubscription
   );
