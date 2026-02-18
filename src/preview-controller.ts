@@ -1,7 +1,9 @@
-import { altsia_to_html_with_visitor } from 'altsia';
+import { altsia_to_html_with_rewriter } from 'altsia';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
-import { altsia_visitor, getVisitedTextLength, resetVisitedTextLength } from './visitor';
+import { altsiaTextRewriter, getVisitedTextLength, resetVisitedTextLength } from './visitor';
+import { altsiaReadFile } from './extern-api';
+import { renderJustKatex } from './katex';
 
 export class PreviewController implements vscode.Disposable {
   private previewPanel: vscode.WebviewPanel | undefined;
@@ -98,7 +100,16 @@ export class PreviewController implements vscode.Disposable {
 
     const source = textDocument.getText();
     resetVisitedTextLength();
-    const html = altsia_to_html_with_visitor(source, altsia_visitor, this.getDisplayLanguage());
+    const html = altsia_to_html_with_rewriter(
+      source,
+      altsiaTextRewriter,
+      {
+        read: (path: string) => altsiaReadFile(textDocument, path),
+        katex_render: (tex: string) => renderJustKatex(tex, false),
+        katex_display_render: (tex: string) => renderJustKatex(tex, true)
+      },
+      this.getDisplayLanguage()
+    );
     const visitedTextLength = getVisitedTextLength();
     this.wordCountStatusBarItem.text = `$(symbol-string) ${visitedTextLength} words`;
     this.wordCountStatusBarItem.tooltip = '[Altsia] word count';
@@ -107,17 +118,14 @@ export class PreviewController implements vscode.Disposable {
       vscode.Uri.joinPath(this.mediaRoot, 'katex', 'katex.min.css')
     );
 
-    this.previewPanel.webview.html = `<!DOCTYPE html>
+    this.previewPanel.webview.html = `
+<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${katexCssUri}">
-  <style>
-    body {
-      font-size: ${bodyFontSize}px;
-    }
-  </style>
+  <style> body { font-size: ${bodyFontSize}px; } </style>
 </head>
 <body>${html}</body>
 </html>`;

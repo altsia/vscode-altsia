@@ -22,7 +22,7 @@ Create `_build/js/release/build/package.json` with:
 ```json
 {
   "name": "altsia",
-  "version": "0.1.0", // edit it
+  "version": "0.1.5", // edit it
   "description": "An experimental markup language that respects document calculus. ",
   "main": "altsia.js",
   "types": "altsia.d.ts",

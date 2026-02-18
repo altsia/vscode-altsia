@@ -2,7 +2,7 @@
   "name": "altsia-vscode",
   "displayName": "Altsia",
   "description": "Altsia language support & preview for VS Code",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "altsia",
   "engines": {
     "vscode": "^1.90.0"
@@ -49,6 +49,12 @@
         "injectTo": [
           "source.altsia"
         ]
+      }
+    ],
+    "snippets": [
+      {
+        "language": "altsia",
+        "path": "./snippets/altsia.code-snippets"
       }
     ],
     "commands": [
