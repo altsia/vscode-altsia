@@ -14,7 +14,7 @@ if (!existsSync(katexDistDir)) {
 
 mkdirSync(outputDir, { recursive: true });
 
-cpSync(resolve(katexDistDir, "katex.min.css"), resolve(outputDir, "katex.min.css"));
+cpSync(resolve(katexDistDir, "katex.css"), resolve(outputDir, "katex.css"));
 cpSync(resolve(katexDistDir, "fonts"), resolve(outputDir, "fonts"), {
   recursive: true,
 });

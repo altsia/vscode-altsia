@@ -115,7 +115,7 @@ export class PreviewController implements vscode.Disposable {
     this.wordCountStatusBarItem.tooltip = '[Altsia] word count';
     this.wordCountStatusBarItem.show();
     const katexCssUri = this.previewPanel.webview.asWebviewUri(
-      vscode.Uri.joinPath(this.mediaRoot, 'katex', 'katex.min.css')
+      vscode.Uri.joinPath(this.mediaRoot, 'katex', 'katex.css')
     );
 
     this.previewPanel.webview.html = `
@@ -125,7 +125,6 @@ export class PreviewController implements vscode.Disposable {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="${katexCssUri}">
-  <style> body { font-size: ${bodyFontSize}px; } </style>
 </head>
 <body>${html}</body>
 </html>`;
