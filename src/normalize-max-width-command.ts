@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 
 const ALTSIA_CONFIGURATION_SECTION = 'altsia';
 const NORMALIZE_MAX_WIDTH_KEY = 'normalize.maxWidth';
-const DEFAULT_NORMALIZE_MAX_WIDTH = 80;
+const DEFAULT_NORMALIZE_MAX_WIDTH = 60;
 const MIN_NORMALIZE_MAX_WIDTH = 20;
 const PRESET_NORMALIZE_MAX_WIDTHS = [40, 60, 80, 100, 120];
 
