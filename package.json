@@ -2,7 +2,7 @@
   "name": "altsia-vscode",
   "displayName": "Altsia",
   "description": "Altsia language support & preview for VS Code",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publisher": "altsia",
   "engines": {
     "vscode": "^1.90.0"
@@ -122,7 +122,7 @@
     "typescript": "^5.6.3"
   },
   "dependencies": {
-    "altsia": "^0.1.2",
+    "altsia": "^0.1.4",
     "katex": "^0.16.28"
   }
 }
