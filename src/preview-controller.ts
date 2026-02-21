@@ -1,15 +1,20 @@
-import { altsia_to_html_with_rewriter } from 'altsia';
+import { kodama_to_html } from 'altsia';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { altsiaTextRewriter, getVisitedTextLength, resetVisitedTextLength } from './visitor';
 import { altsiaReadFile } from './extern-api';
 import { renderJustKatex } from './katex';
+import { ContextAPI } from './forester/context-api';
+import { collectWorkspaceDocs, toDocId } from './forester/collect-docs';
 
 export class PreviewController implements vscode.Disposable {
   private previewPanel: vscode.WebviewPanel | undefined;
   private previewDocumentUri: vscode.Uri | undefined;
   private readonly mediaRoot: vscode.Uri;
   private readonly wordCountStatusBarItem: vscode.StatusBarItem;
+  private cachedContextDocumentUri: string | undefined;
+  private cachedContextPromise: Promise<ContextAPI> | undefined;
+  private previewRenderVersion = 0;
 
   constructor(
     extensionUri: vscode.Uri,
@@ -42,6 +47,8 @@ export class PreviewController implements vscode.Disposable {
       this.previewPanel.onDidDispose(() => {
         this.previewPanel = undefined;
         this.previewDocumentUri = undefined;
+        this.cachedContextDocumentUri = undefined;
+        this.cachedContextPromise = undefined;
         this.wordCountStatusBarItem.hide();
       });
     } else {
@@ -49,7 +56,7 @@ export class PreviewController implements vscode.Disposable {
     }
 
     this.previewDocumentUri = activeEditor.document.uri;
-    this.updatePreview(activeEditor.document);
+    void this.updatePreview(activeEditor.document);
   }
 
   async refreshPreview(): Promise<void> {
@@ -58,7 +65,7 @@ export class PreviewController implements vscode.Disposable {
     }
 
     const previewDocument = await vscode.workspace.openTextDocument(this.previewDocumentUri);
-    this.updatePreview(previewDocument);
+    await this.updatePreview(previewDocument);
   }
 
   handleDocumentChange(event: vscode.TextDocumentChangeEvent): void {
@@ -70,7 +77,7 @@ export class PreviewController implements vscode.Disposable {
       return;
     }
 
-    this.updatePreview(event.document);
+    void this.updatePreview(event.document);
   }
 
   handleActiveEditorChange(editor: vscode.TextEditor | undefined): void {
@@ -79,7 +86,7 @@ export class PreviewController implements vscode.Disposable {
     }
 
     this.previewDocumentUri = editor.document.uri;
-    this.updatePreview(editor.document);
+    void this.updatePreview(editor.document);
   }
 
   dispose(): void {
@@ -87,10 +94,11 @@ export class PreviewController implements vscode.Disposable {
     this.wordCountStatusBarItem.dispose();
   }
 
-  private updatePreview(textDocument: vscode.TextDocument): void {
+  private async updatePreview(textDocument: vscode.TextDocument): Promise<void> {
     if (!this.previewPanel) {
       return;
     }
+    const renderVersion = ++this.previewRenderVersion;
 
     this.previewPanel.title = `Preview ${path.basename(textDocument.fileName)}`;
     const editorFontSize = vscode.workspace
@@ -100,8 +108,31 @@ export class PreviewController implements vscode.Disposable {
 
     const source = textDocument.getText();
     resetVisitedTextLength();
-    const html = altsia_to_html_with_rewriter(
+    // const html = altsia_to_html_with_rewriter(
+    //   source,
+    //   altsiaTextRewriter,
+    //   {
+    //     read: (path: string) => altsiaReadFile(textDocument, path),
+    //     katex_render: (tex: string) => renderJustKatex(tex, false),
+    //     katex_display_render: (tex: string) => renderJustKatex(tex, true)
+    //   },
+    //   this.getDisplayLanguage()
+    // );
+
+    const contextApi = await this.getCachedContext(textDocument);
+    if (!this.previewPanel) {
+      return;
+    }
+    if (this.previewDocumentUri?.toString() !== textDocument.uri.toString()) {
+      return;
+    }
+    if (renderVersion !== this.previewRenderVersion) {
+      return;
+    }
+
+    const html = kodama_to_html(
       source,
+      contextApi,
       altsiaTextRewriter,
       {
         read: (path: string) => altsiaReadFile(textDocument, path),
@@ -109,7 +140,8 @@ export class PreviewController implements vscode.Disposable {
         katex_display_render: (tex: string) => renderJustKatex(tex, true)
       },
       this.getDisplayLanguage()
-    );
+    )
+
     const visitedTextLength = getVisitedTextLength();
     this.wordCountStatusBarItem.text = `$(symbol-string) ${visitedTextLength} words`;
     this.wordCountStatusBarItem.tooltip = '[Altsia] word count';
@@ -128,5 +160,21 @@ export class PreviewController implements vscode.Disposable {
 </head>
 <body>${html}</body>
 </html>`;
+  }
+
+  private getCachedContext(textDocument: vscode.TextDocument): Promise<ContextAPI> {
+    const uri = textDocument.uri.toString();
+    if (this.cachedContextDocumentUri === uri && this.cachedContextPromise) {
+      return this.cachedContextPromise;
+    }
+
+    const contextPromise = (async (): Promise<ContextAPI> => ({
+      doc_workspace_path: toDocId(textDocument.uri),
+      docs: await collectWorkspaceDocs(textDocument),
+    }))();
+
+    this.cachedContextDocumentUri = uri;
+    this.cachedContextPromise = contextPromise;
+    return contextPromise;
   }
 }
