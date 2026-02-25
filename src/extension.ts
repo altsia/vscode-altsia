@@ -46,6 +46,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument((event) => {
     previewController.handleDocumentChange(event);
   });
+  const openDocumentSubscription = vscode.workspace.onDidOpenTextDocument((document) => {
+    previewController.handleDocumentOpen(document);
+  });
+  const closeDocumentSubscription = vscode.workspace.onDidCloseTextDocument((document) => {
+    previewController.handleDocumentClose(document);
+  });
   const changeActiveEditorSubscription = vscode.window.onDidChangeActiveTextEditor((editor) => {
     previewController.handleActiveEditorChange(editor);
   });
@@ -59,6 +65,8 @@ export function activate(context: vscode.ExtensionContext): void {
     normalizeCommand,
     normalizeRangeFormattingProvider,
     changeDocumentSubscription,
+    openDocumentSubscription,
+    closeDocumentSubscription,
     changeActiveEditorSubscription
   );
 }

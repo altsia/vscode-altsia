@@ -7,13 +7,17 @@ import { renderJustKatex } from './katex';
 import { ContextAPI } from './forester/context-api';
 import { collectWorkspaceDocs, toDocId } from './forester/collect-docs';
 
+type WorkspaceDocsCache = {
+  docsById: Map<string, string>;
+  cachedDocs: ContextAPI['docs'] | undefined;
+};
+
 export class PreviewController implements vscode.Disposable {
   private previewPanel: vscode.WebviewPanel | undefined;
   private previewDocumentUri: vscode.Uri | undefined;
   private readonly mediaRoot: vscode.Uri;
   private readonly wordCountStatusBarItem: vscode.StatusBarItem;
-  private cachedContextDocumentUri: string | undefined;
-  private cachedContextPromise: Promise<ContextAPI> | undefined;
+  private readonly workspaceDocsCacheByKey = new Map<string, Promise<WorkspaceDocsCache>>();
   private previewRenderVersion = 0;
 
   constructor(
@@ -47,8 +51,7 @@ export class PreviewController implements vscode.Disposable {
       this.previewPanel.onDidDispose(() => {
         this.previewPanel = undefined;
         this.previewDocumentUri = undefined;
-        this.cachedContextDocumentUri = undefined;
-        this.cachedContextPromise = undefined;
+        this.workspaceDocsCacheByKey.clear();
         this.wordCountStatusBarItem.hide();
       });
     } else {
@@ -69,15 +72,39 @@ export class PreviewController implements vscode.Disposable {
   }
 
   handleDocumentChange(event: vscode.TextDocumentChangeEvent): void {
+    if (!this.isAltDocument(event.document)) {
+      return;
+    }
+    void this.updateOpenedDocumentInCache(event.document);
+
     if (!this.previewPanel || !this.previewDocumentUri) {
       return;
     }
 
-    if (event.document.uri.toString() !== this.previewDocumentUri.toString()) {
+    if (event.document.uri.toString() === this.previewDocumentUri.toString()) {
+      void this.updatePreview(event.document);
       return;
     }
 
-    void this.updatePreview(event.document);
+    if (!this.isSameWorkspace(event.document.uri, this.previewDocumentUri)) {
+      return;
+    }
+
+    void this.refreshPreview();
+  }
+
+  handleDocumentOpen(document: vscode.TextDocument): void {
+    if (!this.isAltDocument(document)) {
+      return;
+    }
+    void this.updateOpenedDocumentInCache(document);
+  }
+
+  handleDocumentClose(document: vscode.TextDocument): void {
+    if (!this.isAltDocument(document)) {
+      return;
+    }
+    void this.restoreClosedDocumentInCache(document);
   }
 
   handleActiveEditorChange(editor: vscode.TextEditor | undefined): void {
@@ -163,18 +190,111 @@ export class PreviewController implements vscode.Disposable {
   }
 
   private getCachedContext(textDocument: vscode.TextDocument): Promise<ContextAPI> {
-    const uri = textDocument.uri.toString();
-    if (this.cachedContextDocumentUri === uri && this.cachedContextPromise) {
-      return this.cachedContextPromise;
+    return (async (): Promise<ContextAPI> => ({
+      doc_workspace_path: toDocId(textDocument.uri),
+      docs: await this.getWorkspaceDocs(textDocument),
+    }))();
+  }
+
+  private async getWorkspaceDocs(textDocument: vscode.TextDocument): Promise<ContextAPI['docs']> {
+    const workspaceDocsCache = await this.getOrCreateWorkspaceDocsCache(textDocument);
+    if (workspaceDocsCache.cachedDocs) {
+      return workspaceDocsCache.cachedDocs;
     }
 
-    const contextPromise = (async (): Promise<ContextAPI> => ({
-      doc_workspace_path: toDocId(textDocument.uri),
-      docs: await collectWorkspaceDocs(textDocument),
-    }))();
+    workspaceDocsCache.cachedDocs = Array.from(workspaceDocsCache.docsById.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([id, content]) => ({ id, content }));
+    return workspaceDocsCache.cachedDocs;
+  }
 
-    this.cachedContextDocumentUri = uri;
-    this.cachedContextPromise = contextPromise;
-    return contextPromise;
+  private getOrCreateWorkspaceDocsCache(
+    textDocument: vscode.TextDocument
+  ): Promise<WorkspaceDocsCache> {
+    const cacheKey = this.getWorkspaceCacheKey(textDocument.uri);
+    const existingCachePromise = this.workspaceDocsCacheByKey.get(cacheKey);
+    if (existingCachePromise) {
+      return existingCachePromise;
+    }
+
+    const cachePromise = (async (): Promise<WorkspaceDocsCache> => {
+      const docs = await collectWorkspaceDocs(textDocument);
+      const docsById = new Map(docs.map((docEntry) => [docEntry.id, docEntry.content]));
+      return {
+        docsById,
+        cachedDocs: undefined,
+      };
+    })();
+
+    this.workspaceDocsCacheByKey.set(cacheKey, cachePromise);
+    return cachePromise;
+  }
+
+  private async updateOpenedDocumentInCache(document: vscode.TextDocument): Promise<void> {
+    const cachePromise = this.workspaceDocsCacheByKey.get(this.getWorkspaceCacheKey(document.uri));
+    if (!cachePromise) {
+      return;
+    }
+
+    const workspaceDocsCache = await cachePromise;
+    const docId = toDocId(document.uri);
+    const content = document.getText();
+    if (workspaceDocsCache.docsById.get(docId) === content) {
+      return;
+    }
+
+    workspaceDocsCache.docsById.set(docId, content);
+    workspaceDocsCache.cachedDocs = undefined;
+  }
+
+  private async restoreClosedDocumentInCache(document: vscode.TextDocument): Promise<void> {
+    const cachePromise = this.workspaceDocsCacheByKey.get(this.getWorkspaceCacheKey(document.uri));
+    if (!cachePromise) {
+      return;
+    }
+
+    const workspaceDocsCache = await cachePromise;
+    const docId = toDocId(document.uri);
+
+    if (document.uri.scheme !== 'file') {
+      if (workspaceDocsCache.docsById.delete(docId)) {
+        workspaceDocsCache.cachedDocs = undefined;
+      }
+      return;
+    }
+
+    try {
+      const bytes = await vscode.workspace.fs.readFile(document.uri);
+      const diskContent = Buffer.from(bytes).toString('utf8');
+      if (workspaceDocsCache.docsById.get(docId) !== diskContent) {
+        workspaceDocsCache.docsById.set(docId, diskContent);
+        workspaceDocsCache.cachedDocs = undefined;
+      }
+    } catch {
+      if (workspaceDocsCache.docsById.delete(docId)) {
+        workspaceDocsCache.cachedDocs = undefined;
+      }
+    }
+  }
+
+  private getWorkspaceCacheKey(uri: vscode.Uri): string {
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri);
+    if (!workspaceFolder) {
+      return `document:${uri.toString()}`;
+    }
+    return `workspace:${workspaceFolder.uri.toString()}`;
+  }
+
+  private isSameWorkspace(leftUri: vscode.Uri, rightUri: vscode.Uri): boolean {
+    const leftWorkspaceFolder = vscode.workspace.getWorkspaceFolder(leftUri);
+    const rightWorkspaceFolder = vscode.workspace.getWorkspaceFolder(rightUri);
+    if (!leftWorkspaceFolder || !rightWorkspaceFolder) {
+      return false;
+    }
+    return leftWorkspaceFolder.uri.toString() === rightWorkspaceFolder.uri.toString();
+  }
+
+  private isAltDocument(document: vscode.TextDocument): boolean {
+    return document.languageId === 'altsia' || document.fileName.endsWith('.alt');
   }
 }
