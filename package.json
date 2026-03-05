@@ -103,7 +103,7 @@
       "editor/title": [
         {
           "command": "altsiaPreview.openPreviewToSide",
-          "when": "resourceExtname == .alt",
+          "when": "resourceExtname == .alt || resourceExtname == .md",
           "group": "navigation"
         }
       ]

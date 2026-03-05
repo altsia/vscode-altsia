@@ -1,4 +1,4 @@
-import { kodama_to_html } from 'altsia';
+import { kodama_to_html, markdown_to_html } from 'altsia';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { altsiaTextRewriter, getVisitedTextLength, resetVisitedTextLength } from './visitor';
@@ -15,6 +15,7 @@ type WorkspaceDocsCache = {
 export class PreviewController implements vscode.Disposable {
   private previewPanel: vscode.WebviewPanel | undefined;
   private previewDocumentUri: vscode.Uri | undefined;
+  private previewDocumentType: 'altsia' | 'markdown' | undefined;
   private readonly mediaRoot: vscode.Uri;
   private readonly wordCountStatusBarItem: vscode.StatusBarItem;
   private readonly workspaceDocsCacheByKey = new Map<string, Promise<WorkspaceDocsCache>>();
@@ -33,7 +34,7 @@ export class PreviewController implements vscode.Disposable {
 
   openPreviewToSide(): void {
     const activeEditor = vscode.window.activeTextEditor;
-    if (!activeEditor || !activeEditor.document.fileName.endsWith('.alt')) {
+    if (!activeEditor || !this.isPreviewDocument(activeEditor.document)) {
       return;
     }
 
@@ -51,6 +52,7 @@ export class PreviewController implements vscode.Disposable {
       this.previewPanel.onDidDispose(() => {
         this.previewPanel = undefined;
         this.previewDocumentUri = undefined;
+        this.previewDocumentType = undefined;
         this.workspaceDocsCacheByKey.clear();
         this.wordCountStatusBarItem.hide();
       });
@@ -59,6 +61,7 @@ export class PreviewController implements vscode.Disposable {
     }
 
     this.previewDocumentUri = activeEditor.document.uri;
+    this.previewDocumentType = this.getDocumentType(activeEditor.document);
     void this.updatePreview(activeEditor.document);
   }
 
@@ -72,17 +75,27 @@ export class PreviewController implements vscode.Disposable {
   }
 
   handleDocumentChange(event: vscode.TextDocumentChangeEvent): void {
-    if (!this.isAltDocument(event.document)) {
+    if (!this.isPreviewDocument(event.document)) {
       return;
     }
-    void this.updateOpenedDocumentInCache(event.document);
+    if (this.isAltDocument(event.document)) {
+      void this.updateOpenedDocumentInCache(event.document);
+    }
 
     if (!this.previewPanel || !this.previewDocumentUri) {
       return;
     }
 
     if (event.document.uri.toString() === this.previewDocumentUri.toString()) {
+      this.previewDocumentType = this.getDocumentType(event.document);
       void this.updatePreview(event.document);
+      return;
+    }
+
+    if (this.previewDocumentType !== 'altsia') {
+      return;
+    }
+    if (!this.isAltDocument(event.document)) {
       return;
     }
 
@@ -108,11 +121,12 @@ export class PreviewController implements vscode.Disposable {
   }
 
   handleActiveEditorChange(editor: vscode.TextEditor | undefined): void {
-    if (!this.previewPanel || !editor || !editor.document.fileName.endsWith('.alt')) {
+    if (!this.previewPanel || !editor || !this.isPreviewDocument(editor.document)) {
       return;
     }
 
     this.previewDocumentUri = editor.document.uri;
+    this.previewDocumentType = this.getDocumentType(editor.document);
     void this.updatePreview(editor.document);
   }
 
@@ -126,6 +140,7 @@ export class PreviewController implements vscode.Disposable {
       return;
     }
     const renderVersion = ++this.previewRenderVersion;
+    this.previewDocumentType = this.getDocumentType(textDocument);
 
     this.previewPanel.title = `Preview ${path.basename(textDocument.fileName)}`;
     const editorFontSize = vscode.workspace
@@ -146,7 +161,10 @@ export class PreviewController implements vscode.Disposable {
     //   this.getDisplayLanguage()
     // );
 
-    const contextApi = await this.getCachedContext(textDocument);
+    const isMarkdown = this.isMarkdownDocument(textDocument);
+    const contextApi = isMarkdown
+      ? { doc_workspace_path: '', docs: [] }
+      : await this.getCachedContext(textDocument);
     if (!this.previewPanel) {
       return;
     }
@@ -157,17 +175,26 @@ export class PreviewController implements vscode.Disposable {
       return;
     }
 
-    const html = kodama_to_html(
-      source,
-      contextApi,
-      altsiaTextRewriter,
-      {
-        read: (path: string) => altsiaReadFile(textDocument, path),
-        katex_render: (tex: string) => renderJustKatex(tex, false),
-        katex_display_render: (tex: string) => renderJustKatex(tex, true)
-      },
-      this.getDisplayLanguage()
-    )
+    const externApi = {
+      read: (path: string) => altsiaReadFile(textDocument, path),
+      katex_render: (tex: string) => renderJustKatex(tex, false),
+      katex_display_render: (tex: string) => renderJustKatex(tex, true)
+    };
+    const html = isMarkdown
+      ? markdown_to_html(
+        source,
+        contextApi,
+        altsiaTextRewriter,
+        externApi,
+        this.getDisplayLanguage()
+      )
+      : kodama_to_html(
+        source,
+        contextApi,
+        altsiaTextRewriter,
+        externApi,
+        this.getDisplayLanguage()
+      );
 
     const visitedTextLength = getVisitedTextLength();
     this.wordCountStatusBarItem.text = `$(symbol-string) ${visitedTextLength} words`;
@@ -296,5 +323,23 @@ export class PreviewController implements vscode.Disposable {
 
   private isAltDocument(document: vscode.TextDocument): boolean {
     return document.languageId === 'altsia' || document.fileName.endsWith('.alt');
+  }
+
+  private isMarkdownDocument(document: vscode.TextDocument): boolean {
+    return document.languageId === 'markdown' || document.fileName.endsWith('.md');
+  }
+
+  private isPreviewDocument(document: vscode.TextDocument): boolean {
+    return this.isAltDocument(document) || this.isMarkdownDocument(document);
+  }
+
+  private getDocumentType(document: vscode.TextDocument): 'altsia' | 'markdown' | undefined {
+    if (this.isAltDocument(document)) {
+      return 'altsia';
+    }
+    if (this.isMarkdownDocument(document)) {
+      return 'markdown';
+    }
+    return undefined;
   }
 }
