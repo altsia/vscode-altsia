@@ -6,6 +6,8 @@ import { altsiaReadFile } from './extern-api';
 import { renderJustKatex } from './katex';
 import { ContextAPI } from './forester/context-api';
 import { collectWorkspaceDocs, toDocId } from './forester/collect-docs';
+import { PreviewWebviewHost } from './preview/webview-host';
+import { Debouncer } from './utils/debouncer';
 
 type WorkspaceDocsCache = {
   docsById: Map<string, string>;
@@ -13,19 +15,25 @@ type WorkspaceDocsCache = {
 };
 
 export class PreviewController implements vscode.Disposable {
+  private static readonly previewDebounceMs = 120;
   private previewPanel: vscode.WebviewPanel | undefined;
   private previewDocumentUri: vscode.Uri | undefined;
   private previewDocumentType: 'altsia' | 'markdown' | undefined;
   private readonly mediaRoot: vscode.Uri;
+  private readonly previewWebviewHost: PreviewWebviewHost;
   private readonly wordCountStatusBarItem: vscode.StatusBarItem;
   private readonly workspaceDocsCacheByKey = new Map<string, Promise<WorkspaceDocsCache>>();
+  private readonly previewUpdateDebouncer = new Debouncer(PreviewController.previewDebounceMs);
+  private readonly previewRefreshDebouncer = new Debouncer(PreviewController.previewDebounceMs);
   private previewRenderVersion = 0;
+  private pendingPreviewDocument: vscode.TextDocument | undefined;
 
   constructor(
     extensionUri: vscode.Uri,
     private readonly getDisplayLanguage: () => string
   ) {
     this.mediaRoot = vscode.Uri.joinPath(extensionUri, 'media');
+    this.previewWebviewHost = new PreviewWebviewHost(this.mediaRoot);
     this.wordCountStatusBarItem = vscode.window.createStatusBarItem(
       vscode.StatusBarAlignment.Right,
       100
@@ -44,17 +52,19 @@ export class PreviewController implements vscode.Disposable {
         'Altsia Preview',
         vscode.ViewColumn.Beside,
         {
-          enableScripts: false,
+          enableScripts: true,
           localResourceRoots: [this.mediaRoot],
         }
       );
 
       this.previewPanel.onDidDispose(() => {
+        this.clearScheduledPreviewWork();
         this.previewPanel = undefined;
         this.previewDocumentUri = undefined;
         this.previewDocumentType = undefined;
         this.workspaceDocsCacheByKey.clear();
         this.wordCountStatusBarItem.hide();
+        this.previewWebviewHost.reset();
       });
     } else {
       this.previewPanel.reveal(vscode.ViewColumn.Beside);
@@ -62,6 +72,7 @@ export class PreviewController implements vscode.Disposable {
 
     this.previewDocumentUri = activeEditor.document.uri;
     this.previewDocumentType = this.getDocumentType(activeEditor.document);
+    this.clearScheduledPreviewWork();
     void this.updatePreview(activeEditor.document);
   }
 
@@ -88,7 +99,7 @@ export class PreviewController implements vscode.Disposable {
 
     if (event.document.uri.toString() === this.previewDocumentUri.toString()) {
       this.previewDocumentType = this.getDocumentType(event.document);
-      void this.updatePreview(event.document);
+      this.schedulePreviewUpdate(event.document);
       return;
     }
 
@@ -103,7 +114,7 @@ export class PreviewController implements vscode.Disposable {
       return;
     }
 
-    void this.refreshPreview();
+    this.scheduleRefreshPreview();
   }
 
   handleDocumentOpen(document: vscode.TextDocument): void {
@@ -127,10 +138,12 @@ export class PreviewController implements vscode.Disposable {
 
     this.previewDocumentUri = editor.document.uri;
     this.previewDocumentType = this.getDocumentType(editor.document);
+    this.clearScheduledPreviewWork();
     void this.updatePreview(editor.document);
   }
 
   dispose(): void {
+    this.clearScheduledPreviewWork();
     this.previewPanel?.dispose();
     this.wordCountStatusBarItem.dispose();
   }
@@ -200,20 +213,37 @@ export class PreviewController implements vscode.Disposable {
     this.wordCountStatusBarItem.text = `$(symbol-string) ${visitedTextLength} words`;
     this.wordCountStatusBarItem.tooltip = '[Altsia] word count';
     this.wordCountStatusBarItem.show();
-    const katexCssUri = this.previewPanel.webview.asWebviewUri(
-      vscode.Uri.joinPath(this.mediaRoot, 'katex', 'katex.css')
-    );
+    await this.previewWebviewHost.render(this.previewPanel.webview, {
+      html,
+      bodyFontSize,
+    });
+  }
 
-    this.previewPanel.webview.html = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="${katexCssUri}">
-</head>
-<body>${html}</body>
-</html>`;
+  private schedulePreviewUpdate(textDocument: vscode.TextDocument): void {
+    this.pendingPreviewDocument = textDocument;
+    this.previewRefreshDebouncer.cancel();
+    this.previewUpdateDebouncer.schedule(() => {
+      const pendingDocument = this.pendingPreviewDocument;
+      this.pendingPreviewDocument = undefined;
+      if (!pendingDocument) {
+        return;
+      }
+      void this.updatePreview(pendingDocument);
+    });
+  }
+
+  private scheduleRefreshPreview(): void {
+    this.pendingPreviewDocument = undefined;
+    this.previewUpdateDebouncer.cancel();
+    this.previewRefreshDebouncer.schedule(() => {
+      void this.refreshPreview();
+    });
+  }
+
+  private clearScheduledPreviewWork(): void {
+    this.previewUpdateDebouncer.cancel();
+    this.previewRefreshDebouncer.cancel();
+    this.pendingPreviewDocument = undefined;
   }
 
   private getCachedContext(textDocument: vscode.TextDocument): Promise<ContextAPI> {
