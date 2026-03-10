@@ -1,4 +1,4 @@
-import { kodama_to_html, markdown_to_html } from 'altsia';
+import { altsia_to_html_with_rewriter, kodama_to_html, markdown_to_html } from 'altsia';
 import * as path from 'node:path';
 import * as vscode from 'vscode';
 import { altsiaTextRewriter, getVisitedTextLength, resetVisitedTextLength } from './visitor';
@@ -18,7 +18,7 @@ export class PreviewController implements vscode.Disposable {
   private static readonly previewDebounceMs = 120;
   private previewPanel: vscode.WebviewPanel | undefined;
   private previewDocumentUri: vscode.Uri | undefined;
-  private previewDocumentType: 'altsia' | 'markdown' | undefined;
+  private previewDocumentType: 'altsia' | 'markdown' | 'plt' | undefined;
   private readonly mediaRoot: vscode.Uri;
   private readonly previewWebviewHost: PreviewWebviewHost;
   private readonly wordCountStatusBarItem: vscode.StatusBarItem;
@@ -163,19 +163,10 @@ export class PreviewController implements vscode.Disposable {
 
     const source = textDocument.getText();
     resetVisitedTextLength();
-    // const html = altsia_to_html_with_rewriter(
-    //   source,
-    //   altsiaTextRewriter,
-    //   {
-    //     read: (path: string) => altsiaReadFile(textDocument, path),
-    //     katex_render: (tex: string) => renderJustKatex(tex, false),
-    //     katex_display_render: (tex: string) => renderJustKatex(tex, true)
-    //   },
-    //   this.getDisplayLanguage()
-    // );
 
     const isMarkdown = this.isMarkdownDocument(textDocument);
-    const contextApi = isMarkdown
+    const isPlainAltsia = this.isPlainAltsiaDocument(textDocument);
+    const contextApi = isMarkdown || isPlainAltsia
       ? { doc_workspace_path: '', docs: [] }
       : await this.getCachedContext(textDocument);
     if (!this.previewPanel) {
@@ -201,13 +192,20 @@ export class PreviewController implements vscode.Disposable {
         externApi,
         this.getDisplayLanguage()
       )
-      : kodama_to_html(
-        source,
-        contextApi,
-        altsiaTextRewriter,
-        externApi,
-        this.getDisplayLanguage()
-      );
+      : isPlainAltsia
+        ? altsia_to_html_with_rewriter(
+          source,
+          altsiaTextRewriter,
+          externApi,
+          this.getDisplayLanguage()
+        )
+        : kodama_to_html(
+          source,
+          contextApi,
+          altsiaTextRewriter,
+          externApi,
+          this.getDisplayLanguage()
+        );
 
     const visitedTextLength = getVisitedTextLength();
     this.wordCountStatusBarItem.text = `$(symbol-string) ${visitedTextLength} words`;
@@ -355,17 +353,24 @@ export class PreviewController implements vscode.Disposable {
     return document.languageId === 'altsia' || document.fileName.endsWith('.alt');
   }
 
+  private isPlainAltsiaDocument(document: vscode.TextDocument): boolean {
+    return document.fileName.endsWith('.plt');
+  }
+
   private isMarkdownDocument(document: vscode.TextDocument): boolean {
     return document.languageId === 'markdown' || document.fileName.endsWith('.md');
   }
 
   private isPreviewDocument(document: vscode.TextDocument): boolean {
-    return this.isAltDocument(document) || this.isMarkdownDocument(document);
+    return this.isAltDocument(document) || this.isPlainAltsiaDocument(document) || this.isMarkdownDocument(document);
   }
 
-  private getDocumentType(document: vscode.TextDocument): 'altsia' | 'markdown' | undefined {
+  private getDocumentType(document: vscode.TextDocument): 'altsia' | 'markdown' | 'plt' | undefined {
     if (this.isAltDocument(document)) {
       return 'altsia';
+    }
+    if (this.isPlainAltsiaDocument(document)) {
+      return 'plt';
     }
     if (this.isMarkdownDocument(document)) {
       return 'markdown';

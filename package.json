@@ -60,7 +60,7 @@
     "commands": [
       {
         "command": "altsiaPreview.openPreviewToSide",
-        "title": "Open Preview to the Side",
+        "title": "[Altsia] Preview",
         "icon": "$(open-preview)"
       },
       {
@@ -103,7 +103,7 @@
       "editor/title": [
         {
           "command": "altsiaPreview.openPreviewToSide",
-          "when": "resourceExtname == .alt || resourceExtname == .md",
+          "when": "resourceExtname == .alt || resourceExtname == .plt || resourceExtname == .md",
           "group": "navigation"
         }
       ]
